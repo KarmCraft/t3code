@@ -2431,9 +2431,7 @@ function AssistantMessageMeta({
   const ctx = use(TimelineRowCtx);
 
   return (
-    <div
-      className={cn("flex min-w-0 items-center gap-2 text-xs tabular-nums", className)}
-    >
+    <div className={cn("flex min-w-0 items-center gap-2 text-xs tabular-nums", className)}>
       {message.actualModel ? (
         <Tooltip>
           <TooltipTrigger
