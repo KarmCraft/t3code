@@ -2,6 +2,7 @@ import { MessageId, ThreadId, TurnId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import { ProjectionThreadMessageRepository } from "../Services/ProjectionThreadMessages.ts";
 import { ProjectionThreadMessageRepositoryLive } from "./ProjectionThreadMessages.ts";
@@ -310,6 +311,38 @@ layer("ProjectionThreadMessageRepository", (it) => {
           streamingOnly: false,
         }),
         false,
+      );
+    }),
+  );
+
+  it.effect("finds the latest assistant message id for a turn without hydrating message text", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-latest-assistant-message");
+      const turnId = TurnId.make("turn-latest-assistant-message");
+
+      assert.isTrue(
+        Option.isNone(yield* repository.getLatestAssistantMessageIdForTurn({ threadId, turnId })),
+      );
+      for (const [index, createdAt] of [
+        "2026-03-01T00:00:00.000Z",
+        "2026-03-01T00:00:01.000Z",
+      ].entries()) {
+        yield* repository.upsert({
+          messageId: MessageId.make(`message-latest-assistant-${index}`),
+          threadId,
+          turnId,
+          role: "assistant",
+          text: "large text that the id query must not select",
+          isStreaming: false,
+          createdAt,
+          updatedAt: createdAt,
+        });
+      }
+
+      assert.deepEqual(
+        yield* repository.getLatestAssistantMessageIdForTurn({ threadId, turnId }),
+        Option.some(MessageId.make("message-latest-assistant-1")),
       );
     }),
   );

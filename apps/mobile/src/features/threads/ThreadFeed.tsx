@@ -1634,7 +1634,7 @@ function renderFeedEntry(
             {message.actualModel ? (
               <Text
                 accessibilityLabel={`Actual model: ${message.actualModel}`}
-                className="mr-1 max-w-[70%] font-t3-medium text-xs text-neutral-600 dark:text-neutral-400"
+                className="mr-1 max-w-[70%] font-t3-medium text-secondary-foreground text-xs"
                 numberOfLines={1}
               >
                 Model: {message.actualModel}
