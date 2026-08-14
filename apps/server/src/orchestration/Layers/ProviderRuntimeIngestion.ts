@@ -1609,6 +1609,8 @@ const make = Effect.gen(function* () {
       const eventTurnId = toTurnId(event.turnId);
       const activeTurnId = thread.session?.activeTurnId ?? null;
       const isTerminalTurn = event.type === "turn.completed" || event.type === "turn.aborted";
+      const terminalActualModel =
+        event.type === "turn.completed" ? event.payload.actualModel : undefined;
       const isCompactedThreadState =
         event.type === "thread.state.changed" && event.payload.state === "compacted";
       const pendingTurnStart =
@@ -2005,10 +2007,13 @@ const make = Effect.gen(function* () {
             turnId,
           );
           const completedAssistantMessageId =
-            trackedAssistantMessageIds.size === 0 && event.payload.actualModel
-              ? (yield* getLoadedThreadDetail())?.messages.findLast(
-                  (message) => message.role === "assistant" && message.turnId === turnId,
-                )?.id
+            trackedAssistantMessageIds.size === 0 && terminalActualModel
+              ? Option.getOrUndefined(
+                  yield* projectionThreadMessages.getLatestAssistantMessageIdForTurn({
+                    threadId: thread.id,
+                    turnId,
+                  }),
+                )
               : undefined;
           const assistantMessageIds =
             trackedAssistantMessageIds.size > 0
@@ -2031,9 +2036,8 @@ const make = Effect.gen(function* () {
                     commandTag: "assistant-complete-finalize",
                     finalDeltaCommandTag: "assistant-delta-finalize-fallback",
                     hasProjectedMessage: existingMessage !== undefined,
-                    ...(event.payload.actualModel &&
-                    assistantMessageId === terminalAssistantMessageId
-                      ? { actualModel: event.payload.actualModel }
+                    ...(terminalActualModel && assistantMessageId === terminalAssistantMessageId
+                      ? { actualModel: terminalActualModel }
                       : {}),
                   }),
                 ),

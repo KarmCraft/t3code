@@ -1171,11 +1171,7 @@ export function makeOpenCodeAdapter(
       if (actualModel) {
         context.completedTurnsWithoutModel.delete(turnId);
       } else {
-        rememberCompletedTurnWithoutModel(
-          context.completedTurnsWithoutModel,
-          turnId,
-          "completed",
-        );
+        rememberCompletedTurnWithoutModel(context.completedTurnsWithoutModel, turnId, "completed");
       }
       for (const requestId of context.autoRepliedRequestIds) {
         context.emittedTerminalRequestIds.add(requestId);
@@ -2421,12 +2417,7 @@ export function makeOpenCodeAdapter(
             const actualModel = context.actualModelByMessageId.get(event.properties.info.id);
             if (
               actualModel &&
-              (yield* captureActualModel(
-                context,
-                event.properties.info.id,
-                actualModel,
-                event,
-              ))
+              (yield* captureActualModel(context, event.properties.info.id, actualModel, event))
             ) {
               context.actualModelByMessageId.delete(event.properties.info.id);
             }
