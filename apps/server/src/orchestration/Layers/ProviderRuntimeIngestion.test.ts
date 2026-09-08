@@ -3607,6 +3607,96 @@ describe("ProviderRuntimeIngestion", () => {
     expect(secondMessage?.actualModel).toBeUndefined();
   });
 
+  it("updates a completed provider-targeted message while another message is streaming", async () => {
+    const harness = await createHarness();
+    const now = "2026-08-14T00:00:00.000Z";
+    const threadId = asThreadId("thread-1");
+    const turnId = asTurnId("turn-targeted-with-streaming-message");
+    const completedItemId = asItemId("item-targeted-completed");
+    const streamingItemId = asItemId("item-unrelated-streaming");
+    const completedProviderMessageId = asItemId("native-targeted-completed");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-targeted-with-streaming"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-delta-targeted-completed"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+      itemId: completedItemId,
+      providerRefs: { providerItemId: completedProviderMessageId },
+      payload: { streamKind: "assistant_text", delta: "completed response" },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-item-targeted-completed"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+      itemId: completedItemId,
+      providerRefs: { providerItemId: completedProviderMessageId },
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    await waitForThread(harness.readModel, (thread) =>
+      thread.messages.some(
+        (message) => message.id === "assistant:item-targeted-completed" && !message.streaming,
+      ),
+    );
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-delta-unrelated-streaming"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+      itemId: streamingItemId,
+      providerRefs: { providerItemId: asItemId("native-unrelated-streaming") },
+      payload: { streamKind: "assistant_text", delta: "still streaming" },
+    });
+    await harness.drain();
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-turn-completed-targeted-with-streaming"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+      providerRefs: { providerItemId: completedProviderMessageId },
+      payload: { state: "completed", actualModel: "gpt-5.6-luna" },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.messages.some(
+        (message) =>
+          message.id === "assistant:item-targeted-completed" &&
+          message.actualModel === "gpt-5.6-luna",
+      ),
+    );
+    const completedMessage = thread.messages.find(
+      (message) => message.id === "assistant:item-targeted-completed",
+    );
+    const streamingMessage = thread.messages.find(
+      (message) => message.id === "assistant:item-unrelated-streaming",
+    );
+    expect(completedMessage?.actualModel).toBe("gpt-5.6-luna");
+    expect(streamingMessage?.actualModel).toBeUndefined();
+    expect(streamingMessage?.text).toBe("still streaming");
+    expect(streamingMessage?.streaming).toBe(false);
+  });
+
   it("maps canonical request events into approval activities with requestKind", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

@@ -2018,13 +2018,11 @@ const make = Effect.gen(function* () {
                 )
               : undefined;
           const assistantMessageIds =
-            trackedAssistantMessageIds.size > 0
-              ? Array.from(trackedAssistantMessageIds)
-              : modelTargetMessageIds.size > 0
-                ? Array.from(modelTargetMessageIds)
-                : completedAssistantMessageId
-                  ? [completedAssistantMessageId]
-                  : [];
+            trackedAssistantMessageIds.size > 0 || modelTargetMessageIds.size > 0
+              ? Array.from(new Set([...trackedAssistantMessageIds, ...modelTargetMessageIds]))
+              : completedAssistantMessageId
+                ? [completedAssistantMessageId]
+                : [];
           if (terminalActualModel && terminalProviderItemId && assistantMessageIds.length === 0) {
             yield* Cache.set(pendingActualModelByTurnKey, providerTurnKey(thread.id, turnId), {
               actualModel: terminalActualModel,
