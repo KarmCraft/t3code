@@ -6566,11 +6566,13 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         input: "identify the late model",
         modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "kedvai/auto"),
       });
+      const promptMessageId = (runtimeMock.state.promptCalls.at(-1) as { messageID: string })
+        .messageID;
       pushEvent({
         type: "message.updated",
         properties: {
           sessionID: "http://127.0.0.1:9999/session",
-          info: { id: "msg-late-actual-model", role: "assistant" },
+          info: { id: "msg-late-actual-model", role: "assistant", parentID: promptMessageId },
         },
       });
       pushEvent({
@@ -6606,6 +6608,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.equal(completions.length, 2);
       NodeAssert.equal(actualModels[0], undefined);
       NodeAssert.equal(actualModels[1], "gpt-5.6-luna");
+      NodeAssert.equal(completions[1]?.providerRefs?.providerItemId, "msg-late-actual-model");
     }),
   );
 
@@ -6630,11 +6633,13 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         input: "identify the current model",
         modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "kedvai/auto"),
       });
+      const promptMessageId = (runtimeMock.state.promptCalls.at(-1) as { messageID: string })
+        .messageID;
       pushEvent({
         type: "message.updated",
         properties: {
           sessionID: "http://127.0.0.1:9999/session",
-          info: { id: "msg-current-actual-model", role: "assistant" },
+          info: { id: "msg-current-actual-model", role: "assistant", parentID: promptMessageId },
         },
       });
       pushEvent({
@@ -6667,6 +6672,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.equal(completed?.type, "turn.completed");
       if (completed?.type === "turn.completed") {
         NodeAssert.equal(completed.payload.actualModel, "gpt-5.6-sol");
+        NodeAssert.equal(completed.providerRefs?.providerItemId, "msg-current-actual-model");
       }
     }),
   );
@@ -6693,6 +6699,8 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         input: "identify the reordered model",
         modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "kedvai/auto"),
       });
+      const promptMessageId = (runtimeMock.state.promptCalls.at(-1) as { messageID: string })
+        .messageID;
       pushEvent({
         type: "message.part.updated",
         properties: {
@@ -6720,7 +6728,11 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         type: "message.updated",
         properties: {
           sessionID: "http://127.0.0.1:9999/session",
-          info: { id: "msg-reordered-actual-model", role: "assistant" },
+          info: {
+            id: "msg-reordered-actual-model",
+            role: "assistant",
+            parentID: promptMessageId,
+          },
         },
       });
 
@@ -6733,6 +6745,141 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.equal(completions.length, 2);
       NodeAssert.equal(actualModels[0], undefined);
       NodeAssert.equal(actualModels[1], "gpt-5.6-terra");
+      NodeAssert.equal(completions[1]?.providerRefs?.providerItemId, "msg-reordered-actual-model");
+    }),
+  );
+
+  it.effect("does not attach delayed metadata from an older response to the active turn", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-delayed-previous-model");
+      const pushEvent = makeOpenCodeEventQueue();
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+        Stream.take(3),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "first turn",
+        modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "kedvai/auto"),
+      });
+      const firstPromptMessageId = (runtimeMock.state.promptCalls.at(-1) as { messageID: string })
+        .messageID;
+      pushEvent({
+        type: "session.status",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          status: { type: "idle" },
+        },
+      });
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const session = (yield* adapter.listSessions()).find(
+          (candidate) => candidate.threadId === threadId,
+        );
+        if (session?.status === "ready") break;
+        yield* Effect.yieldNow;
+      }
+      NodeAssert.equal(
+        (yield* adapter.listSessions()).find((candidate) => candidate.threadId === threadId)
+          ?.status,
+        "ready",
+      );
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "second turn",
+        modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "kedvai/auto"),
+      });
+      const secondPromptMessageId = (runtimeMock.state.promptCalls.at(-1) as { messageID: string })
+        .messageID;
+      pushEvent({
+        type: "message.updated",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          info: {
+            id: "msg-current-second-turn",
+            role: "assistant",
+            parentID: secondPromptMessageId,
+          },
+        },
+      });
+      pushEvent({
+        type: "message.part.updated",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          part: {
+            id: "part-current-second-turn",
+            sessionID: "http://127.0.0.1:9999/session",
+            messageID: "msg-current-second-turn",
+            type: "step-finish",
+            reason: "stop",
+            modelID: "gpt-5.6-sol",
+            cost: 0,
+            tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+          },
+        },
+      });
+      pushEvent({
+        type: "message.updated",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          info: {
+            id: "msg-delayed-first-turn",
+            role: "assistant",
+            parentID: firstPromptMessageId,
+          },
+        },
+      });
+      pushEvent({
+        type: "message.part.updated",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          part: {
+            id: "part-delayed-first-turn",
+            sessionID: "http://127.0.0.1:9999/session",
+            messageID: "msg-delayed-first-turn",
+            type: "step-finish",
+            reason: "stop",
+            modelID: "wrong-old-model",
+            cost: 0,
+            tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+          },
+        },
+      });
+      pushEvent({
+        type: "session.status",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          status: { type: "idle" },
+        },
+      });
+
+      const completions = Array.from(
+        yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")),
+      );
+      NodeAssert.equal(completions.length, 3);
+      NodeAssert.equal(completions[0]?.type, "turn.completed");
+      NodeAssert.equal(completions[1]?.type, "turn.completed");
+      NodeAssert.equal(completions[2]?.type, "turn.completed");
+      if (
+        completions[0]?.type === "turn.completed" &&
+        completions[1]?.type === "turn.completed" &&
+        completions[2]?.type === "turn.completed"
+      ) {
+        NodeAssert.equal(completions[0].payload.actualModel, undefined);
+        NodeAssert.equal(completions[1].payload.actualModel, "wrong-old-model");
+        NodeAssert.equal(completions[1].providerRefs?.providerItemId, "msg-delayed-first-turn");
+        NodeAssert.equal(completions[2].payload.actualModel, "gpt-5.6-sol");
+        NodeAssert.equal(completions[2].providerRefs?.providerItemId, "msg-current-second-turn");
+      }
     }),
   );
 
