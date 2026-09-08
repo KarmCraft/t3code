@@ -1900,6 +1900,14 @@ const make = Effect.gen(function* () {
           if (turnId && Option.isNone(activeAssistantMessageId)) {
             yield* rememberAssistantMessageId(thread.id, turnId, assistantMessageId);
           }
+          if (turnId && completionProviderItemId) {
+            yield* rememberProviderAssistantMessageId(
+              thread.id,
+              turnId,
+              completionProviderItemId,
+              assistantMessageId,
+            );
+          }
 
           yield* finalizeAssistantMessage({
             event,

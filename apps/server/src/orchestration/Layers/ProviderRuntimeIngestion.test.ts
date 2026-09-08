@@ -3344,6 +3344,71 @@ describe("ProviderRuntimeIngestion", () => {
     expect(messages[0]?.actualModel).toBe("gpt-5.6-luna");
   });
 
+  it("targets a non-streamed assistant item when model metadata arrives later", async () => {
+    const harness = await createHarness();
+    const now = "2026-08-14T00:00:00.000Z";
+    const threadId = asThreadId("thread-1");
+    const turnId = asTurnId("turn-non-streamed-model");
+    const itemId = asItemId("item-non-streamed-model");
+    const providerMessageId = asItemId("native-non-streamed-model");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-non-streamed-model"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-item-completed-non-streamed-model"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+      itemId,
+      providerRefs: { providerItemId: providerMessageId },
+      payload: {
+        itemType: "assistant_message",
+        status: "completed",
+        detail: "non-streamed response",
+      },
+    });
+    await waitForThread(harness.readModel, (thread) =>
+      thread.messages.some(
+        (message) => message.id === "assistant:item-non-streamed-model" && !message.streaming,
+      ),
+    );
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-turn-completed-non-streamed-model"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+      providerRefs: { providerItemId: providerMessageId },
+      payload: { state: "completed", actualModel: "gpt-5.6-luna" },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.messages.some(
+        (message) =>
+          message.id === "assistant:item-non-streamed-model" &&
+          message.actualModel === "gpt-5.6-luna",
+      ),
+    );
+    const messages = thread.messages.filter(
+      (message) => message.id === "assistant:item-non-streamed-model",
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.text).toBe("non-streamed response");
+    expect(messages[0]?.actualModel).toBe("gpt-5.6-luna");
+  });
+
   it("retains the actual model when turn completion precedes the assistant item", async () => {
     const harness = await createHarness();
     const now = "2026-08-14T00:00:00.000Z";
