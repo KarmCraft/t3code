@@ -3344,6 +3344,67 @@ describe("ProviderRuntimeIngestion", () => {
     expect(messages[0]?.actualModel).toBe("gpt-5.6-luna");
   });
 
+  it("retains the actual model when turn completion precedes the assistant item", async () => {
+    const harness = await createHarness();
+    const now = "2026-08-14T00:00:00.000Z";
+    const threadId = asThreadId("thread-1");
+    const turnId = asTurnId("turn-completed-before-item");
+    const itemId = asItemId("item-completed-before-item");
+    const providerMessageId = asItemId("native-completed-before-item");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-before-item"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-turn-completed-before-item"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+      providerRefs: { providerItemId: providerMessageId },
+      payload: { state: "completed", actualModel: "gpt-5.6-luna" },
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === null);
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-message-completed-after-turn"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+      itemId,
+      providerRefs: { providerItemId: providerMessageId },
+      payload: {
+        itemType: "assistant_message",
+        status: "completed",
+        detail: "completed after the turn event",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.messages.some(
+        (message) =>
+          message.id === "assistant:item-completed-before-item" &&
+          message.actualModel === "gpt-5.6-luna",
+      ),
+    );
+    const messages = thread.messages.filter(
+      (message) => message.id === "assistant:item-completed-before-item",
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.text).toBe("completed after the turn event");
+    expect(messages[0]?.actualModel).toBe("gpt-5.6-luna");
+  });
+
   it("applies late actual model metadata only to its originating assistant message", async () => {
     const harness = await createHarness();
     const now = "2026-08-14T00:00:00.000Z";
