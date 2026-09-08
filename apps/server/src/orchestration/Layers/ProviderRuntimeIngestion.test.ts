@@ -3470,6 +3470,62 @@ describe("ProviderRuntimeIngestion", () => {
     expect(messages[0]?.actualModel).toBe("gpt-5.6-luna");
   });
 
+  it("does not defer unkeyed terminal model metadata to a later assistant item", async () => {
+    const harness = await createHarness();
+    const now = "2026-08-14T00:00:00.000Z";
+    const threadId = asThreadId("thread-1");
+    const turnId = asTurnId("turn-unkeyed-model");
+    const itemId = asItemId("item-after-unkeyed-model");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-unkeyed-model"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-turn-completed-unkeyed-model"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+      payload: { state: "completed", actualModel: "gpt-5.6-luna" },
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === null);
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-item-completed-after-unkeyed-model"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: now,
+      threadId,
+      turnId,
+      itemId,
+      providerRefs: { providerItemId: asItemId("native-after-unkeyed-model") },
+      payload: {
+        itemType: "assistant_message",
+        status: "completed",
+        detail: "unrelated later response",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.messages.some(
+        (message) => message.id === "assistant:item-after-unkeyed-model" && !message.streaming,
+      ),
+    );
+    const message = thread.messages.find(
+      (entry) => entry.id === "assistant:item-after-unkeyed-model",
+    );
+    expect(message?.text).toBe("unrelated later response");
+    expect(message?.actualModel).toBeUndefined();
+  });
+
   it("applies late actual model metadata only to its originating assistant message", async () => {
     const harness = await createHarness();
     const now = "2026-08-14T00:00:00.000Z";

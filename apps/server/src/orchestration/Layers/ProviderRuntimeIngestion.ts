@@ -2025,10 +2025,10 @@ const make = Effect.gen(function* () {
                 : completedAssistantMessageId
                   ? [completedAssistantMessageId]
                   : [];
-          if (terminalActualModel && assistantMessageIds.length === 0) {
+          if (terminalActualModel && terminalProviderItemId && assistantMessageIds.length === 0) {
             yield* Cache.set(pendingActualModelByTurnKey, providerTurnKey(thread.id, turnId), {
               actualModel: terminalActualModel,
-              ...(terminalProviderItemId ? { providerItemId: terminalProviderItemId } : {}),
+              providerItemId: terminalProviderItemId,
             });
           }
           const terminalAssistantMessageId = assistantMessageIds.at(-1);
