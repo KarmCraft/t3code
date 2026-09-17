@@ -1972,7 +1972,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           messageId: command.messageId,
           role: command.type === "thread.message.reasoning.complete" ? "reasoning" : "assistant",
           text: "",
-          ...(command.actualModel ? { actualModel: command.actualModel } : {}),
+          ...(command.type === "thread.message.assistant.complete" && command.actualModel
+            ? { actualModel: command.actualModel }
+            : {}),
           turnId: command.turnId ?? null,
           streaming: false,
           createdAt: command.createdAt,
